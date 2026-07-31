@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import List
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +16,7 @@ class Settings(BaseSettings):
 
     pakasir_slug: str = Field(alias="PAKASIR_SLUG")
     pakasir_api_key: str = Field(alias="PAKASIR_API_KEY")
-    pakasir_base_url: str = Field(default="https://pakasir.zone.id", alias="PAKASIR_BASE_URL")
+    pakasir_base_url: str = Field(default="https://app.pakasir.com", alias="PAKASIR_BASE_URL")
     payment_check_interval_seconds: int = Field(default=10, alias="PAYMENT_CHECK_INTERVAL_SECONDS")
     payment_timeout_minutes: int = Field(default=30, alias="PAYMENT_TIMEOUT_MINUTES")
 
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     vip_channel_id: int | None = Field(default=None, alias="VIP_CHANNEL_ID")
     purchase_log_chat_id: int | None = Field(default=None, alias="PURCHASE_LOG_CHAT_ID")
 
-    vip_price_monthly: int = Field(default=50_000, alias="VIP_PRICE_MONTHLY")
+    vip_price_weekly: int = Field(default=50_000, validation_alias=AliasChoices("VIP_PRICE_WEEKLY", "VIP_PRICE_MONTHLY"))
     vip_price_permanent: int = Field(default=150_000, alias="VIP_PRICE_PERMANENT")
     preview_image: str = Field(default="", alias="PREVIEW_IMAGE")
 
