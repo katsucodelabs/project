@@ -22,6 +22,15 @@ pip install -r requirements.txt
 cp contoh.env .env
 ```
 
+Jika muncul error `ModuleNotFoundError: No module named 'qrcode'`, pastikan perintah
+instalasi dijalankan memakai Python yang sama dengan yang digunakan untuk menjalankan
+bot:
+
+```bash
+python -m pip install -r requirements.txt
+python -c "import qrcode; print('qrcode terpasang')"
+```
+
 Isi `.env`, terutama `BOT_TOKEN`, `OWNER_IDS`, `MONGO_URI`, `PAKASIR_API_KEY`, `VIP_CHANNEL_ID`, `TARGET_CHAT_ID`, dan `PURCHASE_LOG_CHAT_ID`.
 
 > Jangan commit `.env` karena berisi token dan API key rahasia.
