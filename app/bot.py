@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -212,6 +213,31 @@ async def broadcast(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminState.waiting_broadcast)
     await callback.message.answer("Kirim pesan/media yang akan dibroadcast ke semua user /start.")
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin:gitpull")
+async def git_pull(callback: CallbackQuery) -> None:
+    if not await can_manage(callback.from_user.id):
+        return await callback.answer("Tidak diizinkan", show_alert=True)
+
+    await callback.answer("Menjalankan git pull...")
+    process = await asyncio.create_subprocess_exec(
+        "git",
+        "pull",
+        cwd=Path(__file__).resolve().parent.parent,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    output = (stdout + stderr).decode(errors="replace").strip() or "Tidak ada output."
+    if len(output) > 3500:
+        output = f"{output[-3500:]}"
+
+    status = "berhasil" if process.returncode == 0 else "gagal"
+    await callback.message.answer(
+        f"Git pull {status} (exit code {process.returncode}).\n\n{output}",
+        reply_markup=admin_menu(),
+    )
 
 
 @router.message(AdminState.waiting_broadcast)

@@ -33,4 +33,5 @@ def admin_menu() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="📤 Upload Konten", callback_data="admin:upload")],
         [InlineKeyboardButton(text="🖼 Atur Preview", callback_data="admin:preview")],
         [InlineKeyboardButton(text="📣 Broadcast", callback_data="admin:broadcast")],
+        [InlineKeyboardButton(text="🔄 Git Pull", callback_data="admin:gitpull")],
     ])
