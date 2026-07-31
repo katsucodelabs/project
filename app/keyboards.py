@@ -16,7 +16,7 @@ def user_menu(owner_username: str) -> InlineKeyboardMarkup:
 def vip_packages() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🟣 VIP Perbulan", callback_data="vip:package:monthly"),
+            InlineKeyboardButton(text="🟣 VIP Perminggu", callback_data="vip:package:weekly"),
             InlineKeyboardButton(text="🟡 VIP Permanent", callback_data="vip:package:permanent"),
         ],
         [InlineKeyboardButton(text="⬅️ Kembali", callback_data="menu:user")],

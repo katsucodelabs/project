@@ -13,7 +13,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from config import get_settings
 from app.db import Database
@@ -103,17 +103,64 @@ async def back_user(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+def get_vip_package(package: str) -> dict[str, Any] | None:
+    packages = {
+        "weekly": {
+            "title": "VIP Perminggu",
+            "price": settings.vip_price_weekly,
+            "duration": "7 hari",
+            "benefits": [
+                "Akses channel VIP selama 7 hari",
+                "Cocok untuk mencoba konten premium terlebih dahulu",
+                "Invite link sekali pakai setelah pembayaran berhasil",
+            ],
+        },
+        "permanent": {
+            "title": "VIP Permanent",
+            "price": settings.vip_price_permanent,
+            "duration": "selamanya",
+            "benefits": [
+                "Akses channel VIP permanen",
+                "Tidak perlu perpanjang mingguan",
+                "Pilihan terbaik untuk akses jangka panjang",
+            ],
+        },
+    }
+    return packages.get(package)
+
+
+def vip_package_text() -> str:
+    lines = ["Pilih paket VIP:", ""]
+    for package in ("weekly", "permanent"):
+        info = get_vip_package(package)
+        if not info:
+            continue
+        lines.extend([
+            f"💎 {info['title']} — Rp{info['price']:,}",
+            f"Durasi: {info['duration']}",
+            "Keuntungan:",
+            *(f"• {benefit}" for benefit in info["benefits"]),
+            "",
+        ])
+    lines.append("Kenapa memilih VIP? Konten premium dikirim langsung ke channel VIP dan akses dikirim otomatis setelah pembayaran terkonfirmasi.")
+    return "\n".join(lines)
+
+
 @router.callback_query(F.data == "vip:buy")
 async def buy_vip(callback: CallbackQuery) -> None:
-    await callback.message.edit_text("Pilih paket VIP:", reply_markup=vip_packages())
+    await callback.message.edit_text(vip_package_text(), reply_markup=vip_packages())
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("vip:package:"))
 async def choose_package(callback: CallbackQuery) -> None:
     package = callback.data.split(":")[-1]
-    amount = settings.vip_price_monthly if package == "monthly" else settings.vip_price_permanent
-    invoice = pakasir.create_invoice(amount)
+    package_info = get_vip_package(package)
+    if not package_info:
+        await callback.answer("Paket VIP tidak valid", show_alert=True)
+        return
+    amount = package_info["price"]
+    invoice = await pakasir.create_invoice(amount)
     now = datetime.now(timezone.utc)
     await db.db.purchases.insert_one({
         "invoice": invoice.invoice, "user_id": callback.from_user.id, "package": package,
@@ -121,8 +168,14 @@ async def choose_package(callback: CallbackQuery) -> None:
         "expires_at": now + timedelta(minutes=settings.payment_timeout_minutes),
     })
     await callback.message.answer_photo(
-        invoice.qris_url,
-        caption=f"Invoice: `{invoice.invoice}`\nPaket: {package}\nTotal: Rp{amount:,}\nSilakan bayar sebelum timeout.",
+        BufferedInputFile(invoice.qris_png, filename=f"{invoice.invoice}.png"),
+        caption=(
+            f"Invoice: `{invoice.invoice}`\n"
+            f"Paket: {package_info['title']}\n"
+            f"Total: Rp{amount:,}\n\n"
+            "Scan QRIS Pakasir di gambar ini atau buka tombol pembayaran. "
+            "Silakan bayar sebelum timeout."
+        ),
         parse_mode="Markdown",
         reply_markup=payment_keyboard(invoice.invoice, invoice.payment_url),
     )
@@ -145,7 +198,7 @@ async def watch_payment(invoice: str) -> None:
 
 
 async def activate_vip(purchase: dict[str, Any]) -> None:
-    until = None if purchase["package"] == "permanent" else datetime.now(timezone.utc) + timedelta(days=30)
+    until = None if purchase["package"] == "permanent" else datetime.now(timezone.utc) + timedelta(days=7)
     await db.db.users.update_one({"user_id": purchase["user_id"]}, {"$set": {"is_vip": True, "vip_until": until}}, upsert=True)
     await db.db.purchases.update_one({"invoice": purchase["invoice"]}, {"$set": {"status": "paid", "paid_at": datetime.now(timezone.utc)}})
     invite = None
