@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,8 @@ router = Router()
 
 upload_album_buffers: dict[tuple[int, str], list[Message]] = {}
 upload_album_tasks: dict[tuple[int, str], asyncio.Task] = {}
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+RESTART_DELAY_SECONDS = 2
 
 
 class AdminState(StatesGroup):
@@ -266,6 +270,11 @@ async def broadcast(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+async def restart_bot_after_delay() -> None:
+    await asyncio.sleep(RESTART_DELAY_SECONDS)
+    os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
 @router.callback_query(F.data == "admin:gitpull")
 async def git_pull(callback: CallbackQuery) -> None:
     if not await can_manage(callback.from_user.id):
@@ -275,20 +284,24 @@ async def git_pull(callback: CallbackQuery) -> None:
     process = await asyncio.create_subprocess_exec(
         "git",
         "pull",
-        cwd=Path(__file__).resolve().parent.parent,
+        cwd=PROJECT_ROOT,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, stderr = await process.communicate()
     output = (stdout + stderr).decode(errors="replace").strip() or "Tidak ada output."
-    if len(output) > 3500:
-        output = f"{output[-3500:]}"
+    if len(output) > 3200:
+        output = f"{output[-3200:]}"
 
     status = "berhasil" if process.returncode == 0 else "gagal"
+    restart_note = "\n\nBot akan restart otomatis agar perubahan terbaru langsung diterapkan." if process.returncode == 0 else ""
     await callback.message.answer(
-        f"Git pull {status} (exit code {process.returncode}).\n\n{output}",
+        f"Git pull {status} (exit code {process.returncode}).\n\n{output}{restart_note}",
         reply_markup=admin_menu(),
     )
+
+    if process.returncode == 0:
+        asyncio.create_task(restart_bot_after_delay())
 
 
 @router.message(AdminState.waiting_broadcast)
