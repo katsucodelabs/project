@@ -6,7 +6,6 @@ from io import BytesIO
 from urllib.parse import urlencode
 
 import aiohttp
-import qrcode
 
 
 @dataclass(frozen=True)
@@ -30,6 +29,14 @@ class PakasirClient:
 
     @staticmethod
     def _make_qr_png(content: str) -> bytes:
+        try:
+            import qrcode
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "Dependensi qrcode belum terpasang. Jalankan "
+                "`python -m pip install -r requirements.txt` di environment bot."
+            ) from exc
+
         qr = qrcode.QRCode(version=None, box_size=10, border=4)
         qr.add_data(content)
         qr.make(fit=True)
