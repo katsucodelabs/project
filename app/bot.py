@@ -15,7 +15,7 @@ from aiogram.types import CallbackQuery, Message
 
 from config import get_settings
 from app.db import Database
-from app.keyboards import admin_menu, payment_keyboard, user_menu, vip_packages
+from app.keyboards import admin_menu, payment_keyboard, upload_done_keyboard, user_menu, vip_packages
 from app.pakasir import PakasirClient
 
 settings = get_settings()
@@ -23,6 +23,9 @@ bot = Bot(settings.bot_token)
 db = Database(settings.mongo_uri, settings.mongo_db)
 pakasir = PakasirClient(settings.pakasir_slug, settings.pakasir_api_key, settings.pakasir_base_url)
 router = Router()
+
+upload_album_buffers: dict[tuple[int, str], list[Message]] = {}
+upload_album_tasks: dict[tuple[int, str], asyncio.Task] = {}
 
 
 class AdminState(StatesGroup):
@@ -58,6 +61,27 @@ async def save_user(message: Message) -> None:
 
 async def copy_without_forward(message: Message, chat_id: int) -> None:
     await bot.copy_message(chat_id=chat_id, from_chat_id=message.chat.id, message_id=message.message_id)
+
+
+async def copy_messages_without_forward(messages: list[Message], chat_id: int) -> None:
+    for message in sorted(messages, key=lambda item: item.message_id):
+        await copy_without_forward(message, chat_id)
+        await asyncio.sleep(0.05)
+
+
+async def flush_upload_album(user_id: int, media_group_id: str, chat_id: int) -> None:
+    await asyncio.sleep(1)
+    key = (user_id, media_group_id)
+    messages = upload_album_buffers.pop(key, [])
+    upload_album_tasks.pop(key, None)
+    if not messages:
+        return
+    await copy_messages_without_forward(messages, chat_id)
+    await messages[-1].answer(
+        f"Album/media berhasil dikirim ke channel VIP ({len(messages)} item). "
+        "Kirim lagi jika masih ada, atau tekan Selesai Upload.",
+        reply_markup=upload_done_keyboard(),
+    )
 
 
 @router.message(Command("start"))
@@ -173,7 +197,20 @@ async def upload(callback: CallbackQuery, state: FSMContext) -> None:
     if not await can_manage(callback.from_user.id):
         return await callback.answer("Tidak diizinkan", show_alert=True)
     await state.set_state(AdminState.waiting_upload)
-    await callback.message.answer("Kirim media/pesan apa pun. Bot akan menyalin ke channel VIP tanpa label forward.")
+    await callback.message.answer(
+        "Kirim/forward media atau pesan apa pun. Untuk banyak media, forward sebagai album/grup media "
+        "lalu bot akan mengupload semuanya ke channel VIP. Tekan Selesai Upload jika sudah selesai.",
+        reply_markup=upload_done_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:upload_done")
+async def upload_done(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await can_manage(callback.from_user.id):
+        return await callback.answer("Tidak diizinkan", show_alert=True)
+    await state.clear()
+    await callback.message.answer("Upload selesai.", reply_markup=admin_menu())
     await callback.answer()
 
 
@@ -182,9 +219,23 @@ async def receive_upload(message: Message, state: FSMContext) -> None:
     chat_id = await db.get_setting("vip_channel_id", settings.vip_channel_id)
     if not chat_id:
         return await message.answer("Channel VIP belum diatur.")
+
+    if message.media_group_id and message.from_user:
+        key = (message.from_user.id, message.media_group_id)
+        upload_album_buffers.setdefault(key, []).append(message)
+        previous_task = upload_album_tasks.get(key)
+        if previous_task:
+            previous_task.cancel()
+        upload_album_tasks[key] = asyncio.create_task(
+            flush_upload_album(message.from_user.id, message.media_group_id, int(chat_id))
+        )
+        return
+
     await copy_without_forward(message, int(chat_id))
-    await state.clear()
-    await message.answer("Konten berhasil dikirim tanpa tanda diteruskan.", reply_markup=admin_menu())
+    await message.answer(
+        "Konten berhasil dikirim tanpa tanda diteruskan. Kirim lagi jika masih ada, atau tekan Selesai Upload.",
+        reply_markup=upload_done_keyboard(),
+    )
 
 
 @router.callback_query(F.data == "admin:preview")
